@@ -23,8 +23,8 @@ by a local `.kdbx` file and your desktop keyring instead of a cloud vault.
 An agent should be able to *use* a credential without ever *seeing* it.
 
 ```bash
-kpsec run -e GITLAB_TOKEN=kp://gitlab/api -- glab api /user   # value only in the child's env
-kpsec check kp://gitlab/api                                   # OK  len=26 sha256:1f3a9c02
+kpsec run -e GITLAB_TOKEN=kp://acme/gitlab -- glab api /user   # value only in the child's env
+kpsec check kp://acme/gitlab                                   # OK  len=26 sha256:1f3a9c02
 ```
 
 No command here prints a secret: values are resolved inside `kpsec` and reach the
@@ -152,15 +152,15 @@ kp://<group>/<entry>[#<Attribute>]
 the same way.
 
 ```
-kp://gitlab/api            # the password
-kp://gitlab/api#UserName   # alice
+kp://acme/gitlab            # the password
+kp://acme/gitlab#UserName   # alice
 ```
 
 An `.env.tpl` holds references, not values, and is safe to commit:
 
 ```
 REGISTRY_USER=deployer
-REGISTRY_PASSWORD=kp://registry/deployer
+REGISTRY_PASSWORD=kp://acme/registry
 ```
 
 ```bash
@@ -191,7 +191,7 @@ passing through an intermediate stdout:
 ```bash
 KPSEC_LIB=1 . "$HOME/.claude/skills/keepassxc-secrets/scripts/kpsec"
 
-token=$(resolve "kp://gitlab/api")     # stays in this shell's memory
+token=$(resolve "kp://acme/gitlab")    # stays in this shell's memory
 export GITLAB_TOKEN="$token"           # export, not `env VAR=… cmd` — argv is public
 exec glab api /user
 ```

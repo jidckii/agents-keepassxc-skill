@@ -32,8 +32,8 @@ export TOKEN=$(...)                        # the value sticks in history and log
 Instead:
 
 ```bash
-kpsec run -e TOKEN=kp://gitlab/api -- some-cli   # secret only in the child's env
-kpsec check kp://gitlab/api                      # verify without revealing
+kpsec run -e TOKEN=kp://acme/gitlab -- some-cli   # secret only in the child's env
+kpsec check kp://acme/gitlab                     # verify without revealing
 ```
 
 `kpsec run` does not filter what the child prints. If a command is known to echo
@@ -53,12 +53,12 @@ The default attribute is `Password`.
 ```bash
 kpsec status                              # database, keyring backend, unlock check
 kpsec ls                                  # entries, without values
-kpsec check kp://gitlab/api               # OK + length and sha256 prefix
-kpsec run -e TOKEN=kp://gitlab/api -- glab api /user
+kpsec check kp://acme/gitlab              # OK + length and sha256 prefix
+kpsec run -e TOKEN=kp://acme/gitlab -- glab api /user
 kpsec run --env-file .env.tpl -- docker compose up
-kpsec add gitlab/api -u alice             # value typed by a human in a GUI dialog
-kpsec add gitlab/api -g -L 32             # generate a random value
-kpsec clip kp://gitlab/api                # clipboard for 15 seconds
+kpsec add acme/gitlab -u alice            # value typed by a human in a GUI dialog
+kpsec add acme/gitlab -g -L 32            # generate a random value
+kpsec clip kp://acme/gitlab               # clipboard for 15 seconds
 kpsec lock                                # drop the cached master password
 ```
 
@@ -67,7 +67,7 @@ references. It is safe to commit — it holds no values:
 
 ```
 REGISTRY_USER=deployer
-REGISTRY_PASSWORD=kp://registry/deployer
+REGISTRY_PASSWORD=kp://acme/registry
 ```
 
 Commands an agent must **not** run: `kpsec add --stdin` (the value would land in
@@ -82,8 +82,11 @@ kpsec add <group>/<entry> -u <username> --url <url>
 The value is typed into a GUI dialog, so it never passes through the agent's
 command line. Verify with `kpsec check kp://<group>/<entry>`.
 
-`keepassxc-cli` cannot set or filter by tags, so entries are organised by group
-(`argocd/…`, `gitlab/…`, `registry/…`) and the reference mirrors that path.
+Lay the database out as `<project>/<service>` — `acme/argocd`, `acme/gitlab` —
+because the same service usually has a different account in every project.
+`keepassxc-cli` cannot set or filter by tags, so the group path is the only
+structure and the reference mirrors it. Nested groups work too
+(`kp://acme/dbaas/prod/api`); `kpsec add` creates missing intermediate groups.
 
 ## Building tools on top
 
@@ -94,7 +97,7 @@ wrapper can resolve a secret without it passing through an intermediate stdout:
 ```bash
 KPSEC_LIB=1 . "$HOME/.claude/skills/keepassxc-secrets/scripts/kpsec"
 
-token=$(resolve "kp://gitlab/api")     # stays in this shell's memory
+token=$(resolve "kp://acme/gitlab")    # stays in this shell's memory
 export GITLAB_TOKEN="$token"           # export, not `env VAR=… cmd` — argv is public
 exec glab api /user
 ```

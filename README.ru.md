@@ -24,8 +24,8 @@
 Агент должен уметь *воспользоваться* секретом, ни разу его не *увидев*.
 
 ```bash
-kpsec run -e GITLAB_TOKEN=kp://gitlab/api -- glab api /user   # значение только в env потомка
-kpsec check kp://gitlab/api                                   # OK  len=26 sha256:1f3a9c02
+kpsec run -e GITLAB_TOKEN=kp://acme/gitlab -- glab api /user   # значение только в env потомка
+kpsec check kp://acme/gitlab                                   # OK  len=26 sha256:1f3a9c02
 ```
 
 Ни одна команда здесь не печатает секрет: значения резолвятся внутри `kpsec` и
@@ -154,15 +154,15 @@ kp://<группа>/<запись>[#<Атрибут>]
 запрашиваются точно так же.
 
 ```
-kp://gitlab/api            # пароль
-kp://gitlab/api#UserName   # alice
+kp://acme/gitlab            # пароль
+kp://acme/gitlab#UserName   # alice
 ```
 
 В `.env.tpl` лежат ссылки, а не значения, — такой файл можно коммитить:
 
 ```
 REGISTRY_USER=deployer
-REGISTRY_PASSWORD=kp://registry/deployer
+REGISTRY_PASSWORD=kp://acme/registry
 ```
 
 ```bash
@@ -193,7 +193,7 @@ kpsec run --env-file=.env.tpl -- docker compose up
 ```bash
 KPSEC_LIB=1 . "$HOME/.claude/skills/keepassxc-secrets/scripts/kpsec"
 
-token=$(resolve "kp://gitlab/api")     # остаётся в памяти этого шелла
+token=$(resolve "kp://acme/gitlab")    # остаётся в памяти этого шелла
 export GITLAB_TOKEN="$token"           # именно export, а не `env VAR=… cmd` — argv виден всем
 exec glab api /user
 ```
