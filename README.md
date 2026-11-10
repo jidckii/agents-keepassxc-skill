@@ -148,13 +148,19 @@ Equivalents for other harnesses are in
 kp://<group>/<entry>[#<Attribute>]
 ```
 
-`Password` is the default attribute; `UserName`, `Title`, `URL` and `Notes` work
-the same way.
+`Password` is the default attribute; `UserName`, `Title`, `URL`, `Notes` and any
+custom attribute work the same way. `#@<name>` points at an attachment.
 
 ```
-kp://acme/gitlab            # the password
-kp://acme/gitlab#UserName   # alice
+kp://acme/gitlab                      # the password
+kp://acme/gitlab#UserName             # alice
+kp://acme/vault#cf-access-secret      # a custom attribute
+kp://acme/bastion#@id_ed25519         # an attached SSH key, usually with run -f
 ```
+
+The entry's Notes double as instructions for the agent: `kpsec show` prints them
+together with attribute names (never values), and the skill tells the agent to read
+them before first use.
 
 An `.env.tpl` holds references, not values, and is safe to commit:
 
@@ -174,8 +180,9 @@ kpsec run --env-file=.env.tpl -- docker compose up
 | `kpsec init` | create the database, generate and store the master key |
 | `kpsec status` | where the master password comes from, does the database open |
 | `kpsec ls [group]` | list entries (never values) |
+| `kpsec show <group>/<entry>` | fields, attribute and attachment names, Notes — never values |
 | `kpsec check <ref>…` | verify a reference resolves — prints length and a sha256 prefix |
-| `kpsec run [--env-file=F] [-e VAR=ref] -- cmd` | run a command with secrets in its environment |
+| `kpsec run [--env-file=F] [-e VAR=ref] [-f VAR=ref] -- cmd` | run a command with secrets in its environment; `-f` puts the value in a 0600 temp file and `VAR` holds its path |
 | `kpsec add <path> [-u user] [--url u] [-g]` | add or update an entry; the value is typed into a GUI dialog |
 | `kpsec clip <ref>` | copy a value to the clipboard for 15 seconds |
 | `kpsec lock` | drop the cached master password |

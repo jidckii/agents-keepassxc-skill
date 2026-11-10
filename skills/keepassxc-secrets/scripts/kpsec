@@ -190,15 +190,18 @@ parse_ref() {
     if [ "$ref" = "$REF_PATH" ]; then REF_ATTR=Password; else REF_ATTR=${ref#*#}; fi
 }
 
-resolve() {
-    parse_ref "$1"
-    kp show -q -s -a "$REF_ATTR" "$KPSEC_DB" "$REF_PATH"
+fetch() {
+    local runner=$1
+    parse_ref "$2"
+    case "$REF_ATTR" in
+        @*) "$runner" attachment-export -q --stdout "$KPSEC_DB" "$REF_PATH" "${REF_ATTR#@}" /dev/stdout ;;
+        *) "$runner" show -q -s -a "$REF_ATTR" "$KPSEC_DB" "$REF_PATH" ;;
+    esac
 }
 
-resolve_soft() {
-    parse_ref "$1"
-    kp_quiet show -q -s -a "$REF_ATTR" "$KPSEC_DB" "$REF_PATH"
-}
+resolve() { fetch kp "$1"; }
+
+resolve_soft() { fetch kp_quiet "$1"; }
 
 # --------------------------------------------------------------- commands ---
 
@@ -223,6 +226,24 @@ cmd_status() {
 
 cmd_ls() { kp ls -q -R -f "$KPSEC_DB" "${1:-/}"; }
 
+cmd_show() {
+    local path=${1#kp://} out notes
+    path=${path%%#*}
+    out=$(kp show -q --all --show-attachments "$KPSEC_DB" "$path")
+    notes=$(kp show -q -a Notes "$KPSEC_DB" "$path")
+    printf '%s\n' "${out/"Notes: $notes"/}" | awk '
+        /^Attachments:/ { att = 1; next }
+        att { atts = atts "\n" $0; next }
+        /^(Title|UserName|URL|Tags): ./ { print; next }
+        /^(Title|UserName|URL|Tags|Password|Uuid): / { next }
+        match($0, /^[^ :][^:]*: /) { names = names sep substr($0, 1, RLENGTH - 2); sep = ", " }
+        END {
+            if (names != "") print "Attributes: " names
+            if (atts != "") print "Attachments:" atts
+        }'
+    [ -z "$notes" ] || printf 'Notes:\n%s\n' "$notes"
+}
+
 cmd_check() {
     local rc=0 ref value
     for ref in "$@"; do
@@ -238,9 +259,10 @@ cmd_check() {
 }
 
 cmd_run() {
-    local env_file="" pairs="" line pair name value
+    local env_file="" pairs="" files="" line pair name value tmp rc=0
     while [ $# -gt 0 ]; do
         case "$1" in
+            -f|--file) files="$files$2"$'\n'; shift 2 ;;
             --env-file) env_file=$2; shift 2 ;;
             --env-file=*) env_file=${1#*=}; shift ;;
             -e|--env) pairs="$pairs$2"$'\n'; shift 2 ;;
@@ -270,7 +292,20 @@ cmd_run() {
         export "$name=$value"
     done <<< "$pairs"
 
-    exec "$@"
+    [ -n "$files" ] || exec "$@"
+
+    tmp=$(mktemp -d "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/kpsec.XXXXXX")
+    trap 'rm -rf "$tmp"' EXIT
+    trap 'exit 130' INT TERM HUP
+    while IFS= read -r pair; do
+        [ -n "$pair" ] || continue
+        name=${pair%%=*}
+        value=$(resolve "${pair#*=}")
+        (umask 077; printf '%s\n' "$value" > "$tmp/$name")
+        export "$name=$tmp/$name"
+    done <<< "$files"
+    "$@" || rc=$?
+    exit $rc
 }
 
 cmd_add() {
@@ -394,9 +429,13 @@ kpsec — use secrets from a local KeePassXC database without printing them
 
   kpsec status                        database, keyring backend, unlock check
   kpsec ls [group]                    list entries (never values)
+  kpsec show <group>/<entry>          title, user, URL, attribute and attachment
+                                      names, notes — never secret values
   kpsec check <ref>...                verify refs resolve: length + sha256 prefix
-  kpsec run [--env-file F] [-e VAR=ref] -- cmd
-                                      run cmd with the secrets in its environment
+  kpsec run [--env-file F] [-e VAR=ref] [-f VAR=ref] -- cmd
+                                      run cmd with the secrets in its environment;
+                                      -f writes the value to a 0600 temp file and
+                                      sets VAR to its path, removed on exit
   kpsec add <group>/<entry> [-u user] [--url u] [-g] [-L n]
                                       add/update an entry; value typed in a dialog
   kpsec clip <ref> [seconds]          copy a value to the clipboard
@@ -405,7 +444,7 @@ kpsec — use secrets from a local KeePassXC database without printing them
   kpsec lock                          drop the cached master password
   kpsec show-master                   show the master password in a dialog (human only)
 
-References: kp://<group>/<entry>[#<Attribute>], default attribute Password.
+References: kp://<group>/<entry>[#<Attribute>|#@<attachment>], default Password.
 Environment: KPSEC_DB, KPSEC_TTL, KPSEC_CONFIG, KPSEC_KEYRING, KPSEC_KEEPASSXC_CLI,
 KPSEC_NO_GUI, KPSEC_PROMPT_TIMEOUT.
 EOF
@@ -418,6 +457,7 @@ EOF
 case "${1:-}" in
     status) shift; cmd_status "$@" ;;
     ls) shift; cmd_ls "$@" ;;
+    show) shift; [ $# -gt 0 ] || die "usage: kpsec show <group>/<entry>" 2; cmd_show "$@" ;;
     check) shift; [ $# -gt 0 ] || die "usage: kpsec check <ref>..." 2; cmd_check "$@" ;;
     run) shift; cmd_run "$@" ;;
     add) shift; cmd_add "$@" ;;

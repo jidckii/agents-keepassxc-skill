@@ -125,7 +125,12 @@ function Split-Ref($ref) {
 
 function Resolve-Ref($ref, [switch]$Soft) {
     $r = Split-Ref $ref
-    $value = Invoke-Kp -KpArgs @("show", "-q", "-s", "-a", $r.Attr, $Db, $r.Path) -Quiet:$Soft
+    $kpArgs = if ($r.Attr.StartsWith("@")) {
+        @("attachment-export", "-q", "--stdout", $Db, $r.Path, $r.Attr.Substring(1), "NUL")
+    } else {
+        @("show", "-q", "-s", "-a", $r.Attr, $Db, $r.Path)
+    }
+    $value = Invoke-Kp -KpArgs $kpArgs -Quiet:$Soft
     if ($value) { return ($value -join "`n").TrimEnd("`r", "`n") }
     return $null
 }
@@ -156,6 +161,25 @@ switch ($Command) {
         Invoke-Kp -KpArgs @("ls", "-q", "-R", "-f", $Db, $group)
     }
 
+    "show" {
+        if (-not $Rest) { Die "usage: kpsec show <group>/<entry>" 2 }
+        $path = ($Rest[0] -replace '^kp://', '').Split('#')[0]
+        $out = (Invoke-Kp -KpArgs @("show", "-q", "--all", "--show-attachments", $Db, $path)) -join "`n"
+        $notes = (Invoke-Kp -KpArgs @("show", "-q", "-a", "Notes", $Db, $path)) -join "`n"
+        $out = $out.Replace("Notes: $notes", "")
+        $names = @(); $atts = @(); $inAtts = $false
+        foreach ($line in $out -split "`n") {
+            if ($line -match '^Attachments:') { $inAtts = $true; continue }
+            if ($inAtts) { $atts += $line; continue }
+            if ($line -match '^(Title|UserName|URL|Tags): .') { Write-Host $line; continue }
+            if ($line -match '^(Title|UserName|URL|Tags|Password|Uuid): ') { continue }
+            if ($line -match '^([^ :][^:]*): ') { $names += $Matches[1] }
+        }
+        if ($names) { Write-Host "Attributes: $($names -join ', ')" }
+        if ($atts) { Write-Host "Attachments:"; $atts | ForEach-Object { Write-Host $_ } }
+        if ($notes) { Write-Host "Notes:"; Write-Host $notes }
+    }
+
     "check" {
         if (-not $Rest) { Die "usage: kpsec check <ref>..." 2 }
         $rc = 0
@@ -172,12 +196,13 @@ switch ($Command) {
     }
 
     "run" {
-        $pairs = @(); $envFile = $null; $i = 0
+        $pairs = @(); $files = @(); $envFile = $null; $i = 0
         while ($i -lt $Rest.Count) {
             switch -regex ($Rest[$i]) {
                 '^--env-file$' { $envFile = $Rest[$i + 1]; $i += 2 }
                 '^--env-file=' { $envFile = $Rest[$i].Split('=', 2)[1]; $i++ }
                 '^(-e|--env)$' { $pairs += $Rest[$i + 1]; $i += 2 }
+                '^(-f|--file)$' { $files += $Rest[$i + 1]; $i += 2 }
                 '^--$'         { $i++; break }
                 default        { break }
             }
@@ -196,8 +221,24 @@ switch ($Command) {
             if ($value -like "kp://*") { $value = Resolve-Ref $value }
             Set-Item -Path "env:$name" -Value $value
         }
-        & $cmd[0] @($cmd[1..($cmd.Count - 1)])
-        exit $LASTEXITCODE
+        $tmp = $null
+        if ($files) {
+            $tmp = Join-Path ([IO.Path]::GetTempPath()) "kpsec.$([guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $tmp | Out-Null
+        }
+        try {
+            foreach ($pair in $files) {
+                $name, $ref = $pair.Split('=', 2)
+                $file = Join-Path $tmp $name
+                [IO.File]::WriteAllText($file, (Resolve-Ref $ref) + "`n")
+                Set-Item -Path "env:$name" -Value $file
+            }
+            & $cmd[0] @($cmd[1..($cmd.Count - 1)])
+            $rc = $LASTEXITCODE
+        } finally {
+            if ($tmp) { Remove-Item -Recurse -Force $tmp }
+        }
+        exit $rc
     }
 
     "add" {
@@ -298,15 +339,16 @@ kpsec — use secrets from a local KeePassXC database without printing them
 
   kpsec.ps1 status                    database, keyring, unlock check
   kpsec.ps1 ls [group]                list entries (never values)
+  kpsec.ps1 show <group>/<entry>      fields, attribute names, notes — never values
   kpsec.ps1 check <ref>...            verify refs resolve: length + sha256 prefix
-  kpsec.ps1 run [--env-file F] [-e VAR=ref] -- cmd
+  kpsec.ps1 run [--env-file F] [-e VAR=ref] [-f VAR=ref] -- cmd
   kpsec.ps1 add <group>/<entry> [-u user] [--url u] [-g] [-L n]
   kpsec.ps1 clip <ref> [seconds]
   kpsec.ps1 init
   kpsec.ps1 relocate <path>
   kpsec.ps1 show-master
 
-References: kp://<group>/<entry>[#<Attribute>], default attribute Password.
+References: kp://<group>/<entry>[#<Attribute>|#@<attachment>], default Password.
 Environment: KPSEC_DB, KPSEC_KEEPASSXC_CLI, KPSEC_NO_GUI.
 "@ | Write-Host
     }
