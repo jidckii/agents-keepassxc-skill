@@ -47,6 +47,9 @@ kp://<group>/<entry>[#<Attribute>]      # Password, UserName, URL or any custom 
 kp://<group>/<entry>#@<attachment>      # an attached file, e.g. an SSH key
 ```
 
+Binary attachments (`.jks`, `.p12`, DER keys) only work through `run -f`, which
+writes the exact bytes; `run -e` keeps text only.
+
 The default attribute is `Password`.
 
 ## Read the entry first

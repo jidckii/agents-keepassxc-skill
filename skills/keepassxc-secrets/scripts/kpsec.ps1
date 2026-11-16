@@ -231,7 +231,13 @@ switch ($Command) {
             foreach ($pair in $files) {
                 $name, $ref = $pair.Split('=', 2)
                 $file = Join-Path $tmp $name
-                [IO.File]::WriteAllText($file, (Resolve-Ref $ref) + "`n")
+                $r = Split-Ref $ref
+                if ($r.Attr.StartsWith("@")) {
+                    Invoke-Kp -KpArgs @("attachment-export", "-q", $Db, $r.Path, $r.Attr.Substring(1), $file)
+                    if ($LASTEXITCODE -ne 0) { Die "cannot export $ref" 5 }
+                } else {
+                    [IO.File]::WriteAllText($file, (Resolve-Ref $ref) + "`n")
+                }
                 Set-Item -Path "env:$name" -Value $file
             }
             & $cmd[0] @($cmd[1..($cmd.Count - 1)])

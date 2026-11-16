@@ -190,12 +190,26 @@ parse_ref() {
     if [ "$ref" = "$REF_PATH" ]; then REF_ATTR=Password; else REF_ATTR=${ref#*#}; fi
 }
 
-fetch() {
-    local runner=$1
+private_tmpdir() { mktemp -d "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/kpsec.XXXXXX"; }
+
+fetch_to() {
+    local runner=$1 dest=$3
     parse_ref "$2"
     case "$REF_ATTR" in
-        @*) "$runner" attachment-export -q --stdout "$KPSEC_DB" "$REF_PATH" "${REF_ATTR#@}" /dev/stdout ;;
-        *) "$runner" show -q -s -a "$REF_ATTR" "$KPSEC_DB" "$REF_PATH" ;;
+        @*) (umask 077; "$runner" attachment-export -q "$KPSEC_DB" "$REF_PATH" "${REF_ATTR#@}" "$dest") ;;
+        *) (umask 077; "$runner" show -q -s -a "$REF_ATTR" "$KPSEC_DB" "$REF_PATH" > "$dest") ;;
+    esac
+}
+
+fetch() {
+    local dir rc=0
+    parse_ref "$2"
+    case "$REF_ATTR" in
+        @*) dir=$(private_tmpdir)
+            fetch_to "$1" "$2" "$dir/v" && cat "$dir/v" || rc=$?
+            rm -rf "$dir"
+            return $rc ;;
+        *) "$1" show -q -s -a "$REF_ATTR" "$KPSEC_DB" "$REF_PATH" ;;
     esac
 }
 
@@ -246,16 +260,24 @@ cmd_show() {
 }
 
 cmd_check() {
-    local rc=0 ref value
+    local rc=0 ref value dir f
+    dir=$(private_tmpdir)
+    f=$dir/v
     for ref in "$@"; do
-        if value=$(resolve_soft "$ref") && [ -n "$value" ]; then
-            printf 'OK   %s  len=%s sha256:%s\n' "$ref" "${#value}" \
-                "$(printf '%s' "$value" | sha_prefix)"
+        rm -f "$f"
+        if fetch_to kp_quiet "$ref" "$f" && [ -s "$f" ]; then
+            case "$REF_ATTR" in
+                @*) ;;
+                *) value=$(cat "$f"); printf '%s' "$value" > "$f" ;;
+            esac
+            printf 'OK   %s  len=%s sha256:%s\n' "$ref" "$(wc -c < "$f" | tr -d ' ')" \
+                "$(sha_prefix < "$f")"
         else
             printf 'FAIL %s  (no such entry or attribute)\n' "$ref"
             rc=1
         fi
     done
+    rm -rf "$dir"
     return $rc
 }
 
@@ -295,14 +317,13 @@ cmd_run() {
 
     [ -n "$files" ] || exec "$@"
 
-    tmp=$(mktemp -d "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/kpsec.XXXXXX")
+    tmp=$(private_tmpdir)
     trap 'rm -rf "$tmp"' EXIT
     trap 'exit 130' INT TERM HUP
     while IFS= read -r pair; do
         [ -n "$pair" ] || continue
         name=${pair%%=*}
-        value=$(resolve "${pair#*=}")
-        (umask 077; printf '%s\n' "$value" > "$tmp/$name")
+        fetch_to kp "${pair#*=}" "$tmp/$name"
         export "$name=$tmp/$name"
     done <<< "$files"
     "$@" || rc=$?
