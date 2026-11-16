@@ -167,10 +167,11 @@ switch ($Command) {
         $out = (Invoke-Kp -KpArgs @("show", "-q", "--all", "--show-attachments", $Db, $path)) -join "`n"
         $notes = (Invoke-Kp -KpArgs @("show", "-q", "-a", "Notes", $Db, $path)) -join "`n"
         $out = $out.Replace("Notes: $notes", "")
-        $names = @(); $atts = @(); $inAtts = $false
+        $names = @(); $atts = @(); $inAtts = $false; $prev = $null
         foreach ($line in $out -split "`n") {
-            if ($line -match '^Attachments:') { $inAtts = $true; continue }
             if ($inAtts) { $atts += $line; continue }
+            if ($prev -eq "" -and $line -match '^[^ ].*:$') { $inAtts = $true; continue }
+            $prev = $line
             if ($line -match '^(Title|UserName|URL|Tags): .') { Write-Host $line; continue }
             if ($line -match '^(Title|UserName|URL|Tags|Password|Uuid): ') { continue }
             if ($line -match '^([^ :][^:]*): ') { $names += $Matches[1] }
@@ -278,6 +279,20 @@ switch ($Command) {
         Write-Host "$($verb)ed $path"
     }
 
+    "attach" {
+        if ($Rest.Count -lt 2) { Die "usage: kpsec attach <group>/<entry> <file> [name]" 2 }
+        $path = $Rest[0] -replace '^kp://', '' -replace '#.*$', ''
+        $file = $Rest[1]
+        if (-not (Test-Path -PathType Leaf $file)) { Die "no such file: $file" 3 }
+        $name = if ($Rest.Count -gt 2) { $Rest[2] } else { Split-Path $file -Leaf }
+        if (-not (Resolve-Ref "kp://$path#Title" -Soft)) {
+            Die "no such entry: $path (create it first with kpsec add)" 3
+        }
+        Invoke-Kp -KpArgs @("attachment-import", "-q", "-f", $Db, $path, $name, $file)
+        if ($LASTEXITCODE -ne 0) { Die "attachment-import failed" 5 }
+        Write-Host "attached $file as kp://$path#@$name"
+    }
+
     "clip" {
         if (-not $Rest) { Die "usage: kpsec clip <ref> [seconds]" 2 }
         $r = Split-Ref $Rest[0]
@@ -343,6 +358,7 @@ kpsec — use secrets from a local KeePassXC database without printing them
   kpsec.ps1 check <ref>...            verify refs resolve: length + sha256 prefix
   kpsec.ps1 run [--env-file F] [-e VAR=ref] [-f VAR=ref] -- cmd
   kpsec.ps1 add <group>/<entry> [-u user] [--url u] [-g] [-L n]
+  kpsec.ps1 attach <group>/<entry> <file> [name]
   kpsec.ps1 clip <ref> [seconds]
   kpsec.ps1 init
   kpsec.ps1 relocate <path>

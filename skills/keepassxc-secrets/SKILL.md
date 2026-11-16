@@ -69,6 +69,7 @@ kpsec run -e TOKEN=kp://acme/gitlab -- glab api /user
 kpsec run --env-file .env.tpl -- docker compose up
 kpsec add acme/gitlab -u alice            # value typed by a human in a GUI dialog
 kpsec add acme/gitlab -g -L 32            # generate a random value
+kpsec attach acme/bastion ~/.ssh/id_ed25519   # attach a file as kp://acme/bastion#@id_ed25519
 kpsec clip kp://acme/gitlab               # clipboard for 15 seconds
 kpsec lock                                # drop the cached master password
 ```

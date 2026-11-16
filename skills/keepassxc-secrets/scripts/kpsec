@@ -232,8 +232,9 @@ cmd_show() {
     out=$(kp show -q --all --show-attachments "$KPSEC_DB" "$path")
     notes=$(kp show -q -a Notes "$KPSEC_DB" "$path")
     printf '%s\n' "${out/"Notes: $notes"/}" | awk '
-        /^Attachments:/ { att = 1; next }
         att { atts = atts "\n" $0; next }
+        prev == "" && /^[^ ].*:$/ { att = 1; next }
+        { prev = $0 }
         /^(Title|UserName|URL|Tags): ./ { print; next }
         /^(Title|UserName|URL|Tags|Password|Uuid): / { next }
         match($0, /^[^ :][^:]*: /) { names = names sep substr($0, 1, RLENGTH - 2); sep = ", " }
@@ -362,6 +363,16 @@ cmd_clip() {
     printf 'copied %s to clipboard for %ss\n' "$1" "${2:-15}"
 }
 
+cmd_attach() {
+    local path=${1#kp://} file=$2 name=${3:-$(basename "$2")}
+    path=${path%%#*}
+    [ -f "$file" ] || die "no such file: $file" 3
+    resolve_soft "kp://$path#Title" >/dev/null 2>&1 ||
+        die "no such entry: $path (create it first with kpsec add)" 3
+    kp attachment-import -q -f "$KPSEC_DB" "$path" "$name" "$file"
+    printf 'attached %s as kp://%s#@%s\n' "$file" "$path" "$name"
+}
+
 cmd_init() {
     local master
     [ -e "$KPSEC_DB" ] && die "database already exists: $KPSEC_DB" 3
@@ -438,6 +449,8 @@ kpsec — use secrets from a local KeePassXC database without printing them
                                       sets VAR to its path, removed on exit
   kpsec add <group>/<entry> [-u user] [--url u] [-g] [-L n]
                                       add/update an entry; value typed in a dialog
+  kpsec attach <group>/<entry> <file> [name]
+                                      attach a file (replaces one with that name)
   kpsec clip <ref> [seconds]          copy a value to the clipboard
   kpsec init                          create the database and its master key
   kpsec relocate <path>               re-point the master key after moving the .kdbx
@@ -461,6 +474,7 @@ case "${1:-}" in
     check) shift; [ $# -gt 0 ] || die "usage: kpsec check <ref>..." 2; cmd_check "$@" ;;
     run) shift; cmd_run "$@" ;;
     add) shift; cmd_add "$@" ;;
+    attach) shift; [ $# -ge 2 ] || die "usage: kpsec attach <group>/<entry> <file> [name]" 2; cmd_attach "$@" ;;
     clip) shift; [ $# -gt 0 ] || die "usage: kpsec clip <ref> [seconds]" 2; cmd_clip "$@" ;;
     init) shift; cmd_init "$@" ;;
     relocate) shift; cmd_relocate "$@" ;;
