@@ -394,6 +394,64 @@ cmd_attach() {
     printf 'attached %s as kp://%s#@%s\n' "$file" "$path" "$name"
 }
 
+cmd_set() {
+    local ref="" from_stdin=0 path attr value master rc
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --stdin) from_stdin=1; shift ;;
+            -*) die "unknown option: $1" 2 ;;
+            *) ref=$1; shift ;;
+        esac
+    done
+    ref=${ref#kp://}
+    case "$ref" in *#?*) ;; *) die "usage: kpsec set <group>/<entry>#<Attribute> [--stdin]" 2 ;; esac
+    path=${ref%%#*} attr=${ref#*#}
+    case "$attr" in
+        Title|UserName|Password|URL|Notes) die "$attr is a standard field, use kpsec add" 2 ;;
+        @*) die "attachments are set with kpsec attach" 2 ;;
+    esac
+
+    if [ "$from_stdin" = 1 ]; then
+        value=$(cat)
+    else
+        value=$(prompt_secret "kpsec" "Value for $path#$attr") || die "no value entered" 3
+    fi
+    [ -n "$value" ] || die "no value entered" 3
+    master=$(master_get) || die "cannot obtain the database master password" 4
+
+    rc=0
+    printf '%s\0%s' "$master" "$value" | with_pykeepass -c '
+import sys
+from pykeepass import PyKeePass
+from pykeepass.exceptions import CredentialsError
+db, path, attr = sys.argv[1:4]
+master, value = sys.stdin.buffer.read().decode().split("\0", 1)
+try:
+    kp = PyKeePass(db, password=master)
+except CredentialsError:
+    sys.exit(5)
+entry = kp.find_entries(path=path.split("/"), first=True)
+if entry is None:
+    sys.exit(3)
+entry.set_custom_property(attr, value, protect=True)
+kp.save()
+' "$KPSEC_DB" "$path" "$attr" || rc=$?
+    case "$rc" in
+        0) printf 'set kp://%s#%s\n' "$path" "$attr" ;;
+        3) die "no such entry: $path (create it first with kpsec add)" 3 ;;
+        5) die "master password rejected by $KPSEC_DB" 5 ;;
+        *) die "writing the attribute failed" "$rc" ;;
+    esac
+}
+
+with_pykeepass() {
+    if [ -n "${KPSEC_PYTHON:-}" ]; then "$KPSEC_PYTHON" "$@"
+    elif python3 -c 'import pykeepass' 2>/dev/null; then python3 "$@"
+    elif command -v uv >/dev/null; then uv run -q --no-project --with pykeepass python3 "$@"
+    else die "kpsec set needs pykeepass: pip install --user pykeepass, or install uv" 6
+    fi
+}
+
 cmd_init() {
     local master
     [ -e "$KPSEC_DB" ] && die "database already exists: $KPSEC_DB" 3
@@ -472,6 +530,9 @@ kpsec — use secrets from a local KeePassXC database without printing them
                                       add/update an entry; value typed in a dialog
   kpsec attach <group>/<entry> <file> [name]
                                       attach a file (replaces one with that name)
+  kpsec set <group>/<entry>#<Attr> [--stdin]
+                                      set a protected custom attribute; value typed
+                                      in a dialog (needs pykeepass or uv)
   kpsec clip <ref> [seconds]          copy a value to the clipboard
   kpsec init                          create the database and its master key
   kpsec relocate <path>               re-point the master key after moving the .kdbx
@@ -480,7 +541,7 @@ kpsec — use secrets from a local KeePassXC database without printing them
 
 References: kp://<group>/<entry>[#<Attribute>|#@<attachment>], default Password.
 Environment: KPSEC_DB, KPSEC_TTL, KPSEC_CONFIG, KPSEC_KEYRING, KPSEC_KEEPASSXC_CLI,
-KPSEC_NO_GUI, KPSEC_PROMPT_TIMEOUT.
+KPSEC_NO_GUI, KPSEC_PROMPT_TIMEOUT, KPSEC_PYTHON.
 EOF
 }
 
@@ -496,6 +557,7 @@ case "${1:-}" in
     run) shift; cmd_run "$@" ;;
     add) shift; cmd_add "$@" ;;
     attach) shift; [ $# -ge 2 ] || die "usage: kpsec attach <group>/<entry> <file> [name]" 2; cmd_attach "$@" ;;
+    set) shift; cmd_set "$@" ;;
     clip) shift; [ $# -gt 0 ] || die "usage: kpsec clip <ref> [seconds]" 2; cmd_clip "$@" ;;
     init) shift; cmd_init "$@" ;;
     relocate) shift; cmd_relocate "$@" ;;

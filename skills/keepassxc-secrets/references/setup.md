@@ -3,7 +3,8 @@
 ## Requirements
 
 The scripts are `bash` (Linux, macOS) and PowerShell (Windows). There is no
-language runtime to install.
+language runtime to install, except Python with `pykeepass` for
+`kpsec set` (on Linux and macOS only).
 
 | Component | Why | Required |
 |---|---|---|
@@ -13,6 +14,7 @@ language runtime to install.
 | Credential Manager | same, via the native API | ships with Windows |
 | `keyctl` (keyutils) | in-memory cache with a TTL (Linux only) | optional |
 | `kdialog`, `zenity` or `pinentry` | prompts and one-off displays | optional |
+| `pykeepass` (or `uv` to fetch it) | `kpsec set` — `keepassxc-cli` cannot write custom attributes | optional |
 
 ```bash
 # Debian/Ubuntu

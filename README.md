@@ -185,6 +185,7 @@ kpsec run --env-file=.env.tpl -- docker compose up
 | `kpsec run [--env-file=F] [-e VAR=ref] [-f VAR=ref] -- cmd` | run a command with secrets in its environment; `-f` puts the value in a 0600 temp file and `VAR` holds its path |
 | `kpsec add <path> [-u user] [--url u] [-g]` | add or update an entry; the value is typed into a GUI dialog |
 | `kpsec attach <path> <file> [name]` | attach a file to an existing entry (same name is replaced); read it back as `kp://<path>#@<name>` |
+| `kpsec set <path>#<Attr> [--stdin]` | add or update a protected custom attribute of an existing entry; the value is typed into a GUI dialog. Needs `pykeepass` (or `uv`, which fetches it): `keepassxc-cli` cannot write custom attributes |
 | `kpsec clip <ref>` | copy a value to the clipboard for 15 seconds |
 | `kpsec lock` | drop the cached master password |
 | `kpsec relocate <path>` | re-point the stored master key after moving the `.kdbx` file |
